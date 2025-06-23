@@ -2,11 +2,8 @@
 
 require 'vendor/autoload.php';
 
-use Azure\Storage\Blob\BlobClient;
-use Azure\Storage\Blob\Models\BlobSasBuilder;
-use Azure\Storage\Blob\Models\BlobSasPermissions;
-use Azure\Core\Credentials\SharedKeyCredential;
-use Azure\Storage\Blob\Models\ListBlobsOptions;
+use MicrosoftAzure\Storage\Blob\BlobRestProxy;
+use MicrosoftAzure\Storage\Blob\Models\ListBlobsOptions;
 
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
@@ -19,18 +16,27 @@ if (!$connectionString) {
     die("La variable AZURE_STORAGE_CONNECTION_STRING no está configurada.");
 }
 
-// Obtener credenciales
-preg_match("/AccountName=([^;]+)/", $connectionString, $matchName);
-preg_match("/AccountKey=([^;]+)/", $connectionString, $matchKey);
-$accountName = $matchName[1] ?? null;
-$accountKey = $matchKey[1] ?? null;
+$blobClient = BlobRestProxy::createBlobService($connectionString);
 
-if (!$accountName || !$accountKey) {
-    die("No se pudo extraer AccountName o AccountKey de la cadena de conexión.");
+// Descargar archivo si se solicita
+if (isset($_GET['download_blob'])) {
+    $blobName = $_GET['download_blob'];
+    try {
+        $blob = $blobClient->getBlob($containerName, $blobName);
+        $content = stream_get_contents($blob->getContentStream());
+
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="' . basename($blobName) . '"');
+        header('Content-Length: ' . strlen($content));
+
+        echo $content;
+        exit;
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo "Error al descargar el archivo: " . $e->getMessage();
+        exit;
+    }
 }
-
-$credential = new SharedKeyCredential($accountName, $accountKey);
-$blobClient = BlobClient::createFromConnectionString($connectionString);
 
 // Eliminar archivo si se envió solicitud
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_blob'])) {
@@ -49,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['zipfile'])) {
         $blobName = basename($file['name']);
         try {
             $content = fopen($file['tmp_name'], 'r');
-            $blobClient->uploadBlob($containerName, $blobName, $content);
+            $blobClient->createBlockBlob($containerName, $blobName, $content);
             echo "<p style='color:green;'>Archivo subido: {$blobName}</p>";
         } catch (Exception $e) {
             echo "<p style='color:red;'>Error al subir: {$e->getMessage()}</p>";
@@ -81,18 +87,9 @@ try {
     <?php if (empty($blobs)): ?>
         <li>No hay archivos ZIP.</li>
     <?php else: ?>
-        <?php foreach ($blobs as $blob):
-            $sas = new BlobSasBuilder();
-            $sas->setContainerName($containerName);
-            $sas->setBlobName($blob->getName());
-            $sas->setPermissions(BlobSasPermissions::parse('r'));
-            $sas->setExpiry((new \DateTime())->add(new \DateInterval('PT1H')));
-
-            $sasToken = $sas->generateSasQueryParameters($credential)->toString();
-            $url = $blobClient->getBlobUrl($containerName, $blob->getName()) . '?' . $sasToken;
-        ?>
+        <?php foreach ($blobs as $blob): ?>
             <li>
-                <a href="<?= htmlspecialchars($url) ?>" target="_blank">
+                <a href="?download_blob=<?= urlencode($blob->getName()) ?>" target="_blank">
                     <?= htmlspecialchars($blob->getName()) ?>
                 </a>
                 <form method="POST" style="display:inline;" onsubmit="return confirm('¿Eliminar <?= htmlspecialchars($blob->getName()) ?>?')">
