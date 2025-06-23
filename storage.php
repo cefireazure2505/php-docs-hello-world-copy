@@ -1,4 +1,10 @@
 <?php
+
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+
 require "vendor/autoload.php";
 
 use MicrosoftAzure\Storage\Blob\BlobRestProxy;
@@ -88,6 +94,29 @@ try {
         $containerName
     ) ?>'</h1>
     <ul>
+        <?php
+            // Extraer AccountName y AccountKey
+            $accountName = null;
+            $accountKey = null;
+
+            if (preg_match("/AccountName=([^;]+)/", $connectionString, $matches1)) {
+                $accountName = $matches1[1];
+            }
+
+            if (preg_match("/AccountKey=([^;]+)/", $connectionString, $matches2)) {
+                $accountKey = $matches2[1];
+            }
+
+            if (!$accountName || !$accountKey) {
+                echo "<p style='color:red;'>No se pudo extraer la clave de acceso de la cadena de conexión.</p>";
+            } else {
+                try {
+                    $sasHelper = new SharedAccessSignatureHelper($accountName, $accountKey);
+                } catch (Exception $e) {
+                    echo "<p style='color:red;'>Error creando SAS Helper: " . $e->getMessage() . "</p>";
+                }
+            }
+        ?>
         <?php foreach ($blobs as $blob): ?>
             <li>
                 <a href="<?= htmlspecialchars(
