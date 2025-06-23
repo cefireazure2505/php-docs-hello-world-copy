@@ -1,6 +1,6 @@
 <?php
 
-require __DIR__ . '/vendor/autoload.php';
+require 'vendor/autoload.php';
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -9,8 +9,6 @@ error_reporting(E_ALL);
 use MicrosoftAzure\Storage\Blob\BlobRestProxy;
 use MicrosoftAzure\Storage\Blob\Models\ListBlobsOptions;
 use MicrosoftAzure\Storage\Common\Exceptions\ServiceException;
-// NEW: Add these for SAS
-use MicrosoftAzure\Storage\Blob\Models\SharedAccessBlobPermissions;
 use MicrosoftAzure\Storage\Blob\BlobSharedAccessPolicy;
 use MicrosoftAzure\Storage\Common\SharedAccessSignatureHelper; // This might be the correct public class now
 
@@ -77,7 +75,7 @@ try {
                 if ($accountName) {
                     try {
                         // Define the policy for the SAS token
-                        $permission = SharedAccessBlobPermissions::READ; // Only allow reading
+                        $permission = 'r'; // 'r' significa permiso de lectura
                         // Set expiry to 1 hour from now. Adjust as needed.
                         $expiryTime = (new \DateTime())->add(new \DateInterval('PT1H'));
 
