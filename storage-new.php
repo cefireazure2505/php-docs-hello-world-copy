@@ -6,8 +6,10 @@ use Azure\Storage\Blob\BlobRestProxy;
 use Azure\Storage\Blob\BlobClient;
 use Azure\Storage\Blob\Models\BlobSasBuilder;
 use Azure\Storage\Blob\Models\BlobSasPermissions;
-use Azure\Core\Credentials\SharedKeyCredential;
 use Azure\Storage\Blob\Models\ListBlobsOptions;
+
+use MicrosoftAzure\Storage\Common\ServicesBuilder;
+use MicrosoftAzure\Storage\Common\Internal\Resources;
 
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
