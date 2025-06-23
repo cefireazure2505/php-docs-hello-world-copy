@@ -16,7 +16,51 @@ if (!$connectionString) {
     die("La variable AZURE_STORAGE_CONNECTION_STRING no está configurada.");
 }
 
+// Obtener credenciales
+preg_match("/AccountName=([^;]+)/", $connectionString, $matchName);
+preg_match("/AccountKey=([^;]+)/", $connectionString, $matchKey);
+$accountName = $matchName[1] ?? null;
+$accountKey = $matchKey[1] ?? null;
+
+if (!$accountName || !$accountKey) {
+    die("No se pudo extraer AccountName o AccountKey de la cadena de conexión.");
+}
+
 $blobClient = BlobRestProxy::createBlobService($connectionString);
+
+// Función para generar SAS token manualmente
+function generateBlobSasToken($accountName, $accountKey, $containerName, $blobName, $expiryMinutes = 60) {
+    $permissions = "r";
+    $resource = "b";
+    $version = "2020-02-10";
+    $expiry = gmdate('Y-m-d\TH:i:s\Z', time() + ($expiryMinutes * 60));
+    $canonicalizedResource = "/blob/{$accountName}/{$containerName}/{$blobName}";
+
+    $stringToSign = implode("\n", [
+        $permissions,            // sp
+        "",                      // st
+        $expiry,                 // se
+        $canonicalizedResource, // canonicalized resource
+        "",                      // si
+        "",                      // sip
+        "",                      // spr
+        $version,                // sv
+        "", "", "", "", "", ""   // extra fields
+    ]);
+
+    $decodedKey = base64_decode($accountKey);
+    $signature = base64_encode(hash_hmac('sha256', $stringToSign, $decodedKey, true));
+
+    $queryParams = [
+        'sv' => $version,
+        'sr' => $resource,
+        'sig' => $signature,
+        'se' => $expiry,
+        'sp' => $permissions
+    ];
+
+    return http_build_query($queryParams);
+}
 
 // Eliminar archivo si se envió solicitud
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_blob'])) {
@@ -52,41 +96,6 @@ try {
 } catch (Exception $e) {
     die("Error al listar blobs: " . $e->getMessage());
 }
-
-function generateBlobSasToken($accountName, $accountKey, $containerName, $blobName, $expiryMinutes = 60) {
-    $permissions = "r";
-    $resource = "b";
-    $version = "2020-02-10";
-    $expiry = gmdate('Y-m-d\TH:i:s\Z', time() + ($expiryMinutes * 60));
-    $canonicalizedResource = "/blob/{$accountName}/{$containerName}/{$blobName}";
-
-    $stringToSign = implode("\n", [
-        $permissions,        // signed permissions
-        "",                  // signed start time
-        $expiry,             // signed expiry time
-        $canonicalizedResource,
-        "",                  // signed identifier
-        "",                  // signed IP
-        "",                  // signed protocol
-        $version,            // signed version
-        "", "", "", "", "", "" // extra fields for newer versions
-    ]);
-
-    $decodedKey = base64_decode($accountKey);
-    $signature = base64_encode(hash_hmac('sha256', $stringToSign, $decodedKey, true));
-
-    $queryParams = [
-        'sv' => $version,
-        'sr' => $resource,
-        'sig' => $signature,
-        'se' => $expiry,
-        'sp' => $permissions
-    ];
-
-    return http_build_query($queryParams);
-}
-
-
 ?>
 
 <!DOCTYPE html>
@@ -117,7 +126,6 @@ function generateBlobSasToken($accountName, $accountKey, $containerName, $blobNa
                 </form>
             </li>
         <?php endforeach; ?>
-
     <?php endif; ?>
     </ul>
 
