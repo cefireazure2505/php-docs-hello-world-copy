@@ -1,6 +1,6 @@
 {
   "require": {
     "microsoft/azure-storage-blob": "^1.5",
-    "microsoft/azure-storage-common": "^1.5",
+    "microsoft/azure-storage-common": "^1.5"
   }
 }
