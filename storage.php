@@ -78,40 +78,47 @@ try {
 <body>
     <h1>Archivos ZIP en el contenedor '<?= htmlspecialchars($containerName) ?>'</h1>
     <ul>
-        <?php
-            // Obtener AccountName y AccountKey de la cadena de conexión
-            preg_match("/AccountName=([^;]+)/", $connectionString, $accountNameMatch);
-            preg_match("/AccountKey=([^;]+)/", $connectionString, $accountKeyMatch);
+<?php
+try {
+    // Obtener AccountName y AccountKey de la cadena de conexión
+    if (!preg_match("/AccountName=([^;]+)/", $connectionString, $accountNameMatch) ||
+        !preg_match("/AccountKey=([^;]+)/", $connectionString, $accountKeyMatch)) {
+        throw new Exception("No se pudo extraer AccountName o AccountKey de la cadena de conexión.");
+    }
 
-            $accountName = $accountNameMatch[1];
-            $accountKey = $accountKeyMatch[1];
+    $accountName = $accountNameMatch[1];
+    $accountKey = $accountKeyMatch[1];
 
-            $sasHelper = new SharedAccessSignatureHelper($accountName, $accountKey);
+    $sasHelper = new SharedAccessSignatureHelper($accountName, $accountKey);
 
-            // Listado de blobs con enlace SAS
-            foreach ($blobs as $blob):
-                $blobName = $blob->getName();
+    // Listado de blobs con enlace SAS
+    foreach ($blobs as $blob):
+        $blobName = $blob->getName();
 
-                // Crear SAS con permiso de lectura durante 15 minutos
-                $expiry = (new DateTime())->modify('+15 minutes');
-                $sasToken = $sasHelper->generateBlobServiceSharedAccessSignatureToken(
-                    Resources::RESOURCE_TYPE_BLOB,
-                    "$containerName/$blobName",
-                    SharedAccessBlobPermissions::READ,
-                    $expiry
-                );
+        // Crear SAS con permiso de lectura durante 15 minutos
+        $expiry = (new DateTime())->modify('+15 minutes');
+        $sasToken = $sasHelper->generateBlobServiceSharedAccessSignatureToken(
+            Resources::RESOURCE_TYPE_BLOB,
+            "$containerName/$blobName",
+            SharedAccessBlobPermissions::READ,
+            $expiry
+        );
 
-                // Generar URL completa con token
-                $secureUrl = $blob->getUrl() . '?' . $sasToken;
-        ?>
-        <li>
-            <a href="<?= htmlspecialchars($secureUrl) ?>" target="_blank">
-                <?= htmlspecialchars($blobName) ?>
-            </a>
-            [<a href="?delete=<?= urlencode($blobName) ?>" onclick="return confirm('¿Eliminar este archivo?')">Eliminar</a>]
-        </li>
-            <?php endforeach; ?>
-    </ul>
+        $secureUrl = $blob->getUrl() . '?' . $sasToken;
+?>
+    <li>
+        <a href="<?= htmlspecialchars($secureUrl) ?>" target="_blank">
+            <?= htmlspecialchars($blobName) ?>
+        </a>
+        [<a href="?delete=<?= urlencode($blobName) ?>" onclick="return confirm('¿Eliminar este archivo?')">Eliminar</a>]
+    </li>
+<?php
+    endforeach;
+} catch (Exception $e) {
+    echo "<li style='color:red;'>Error al generar enlaces seguros: " . htmlspecialchars($e->getMessage()) . "</li>";
+}
+?>
+</ul>
     <h2>Subir nuevo archivo ZIP</h2>
     <form method="POST" enctype="multipart/form-data">
         <input type="file" name="zipfile" accept=".zip" required>
