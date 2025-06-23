@@ -25,17 +25,33 @@ if (isset($_GET['delete'])) {
 // Subida de archivo ZIP
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES["zipfile"])) {
     $uploadedFile = $_FILES["zipfile"];
-    if ($uploadedFile["type"] !== "application/zip") {
-        echo "<p style='color:red;'>Solo se permiten archivos ZIP.</p>";
-    } else {
-        $blobName = basename($uploadedFile["name"]);
-        $content = fopen($uploadedFile["tmp_name"], "r");
 
-        try {
-            $blobClient->createBlockBlob($containerName, $blobName, $content);
-            echo "<p style='color:green;'>Archivo $blobName subido correctamente.</p>";
-        } catch (ServiceException $e) {
-            echo "<p style='color:red;'>Error al subir: " . $e->getMessage() . "</p>";
+    $blobName = basename($uploadedFile["name"]);
+    $extension = strtolower(pathinfo($blobName, PATHINFO_EXTENSION));
+
+    if ($extension !== 'zip') {
+        echo "<p style='color:red;'>Solo se permiten archivos con extensión .zip.</p>";
+      
+    } else{
+
+        // (Opcional) Verificación adicional por tipo MIME real:
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $uploadedFile["tmp_name"]);
+        finfo_close($finfo);
+
+        if ($mimeType !== 'application/zip' && $mimeType !== 'application/x-zip-compressed') {
+            echo "<p style='color:red;'>El archivo no parece ser un ZIP válido (MIME: $mimeType).</p>";
+         
+        } else {
+            $blobName = basename($uploadedFile["name"]);
+            $content = fopen($uploadedFile["tmp_name"], "r");
+
+            try {
+                $blobClient->createBlockBlob($containerName, $blobName, $content);
+                echo "<p style='color:green;'>Archivo $blobName subido correctamente.</p>";
+            } catch (ServiceException $e) {
+                echo "<p style='color:red;'>Error al subir: " . $e->getMessage() . "</p>";
+            }
         }
     }
 }
