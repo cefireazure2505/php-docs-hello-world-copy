@@ -8,6 +8,8 @@ use Azure\Storage\Blob\Models\BlobSasBuilder;
 use Azure\Storage\Blob\Models\BlobSasPermissions;
 use Azure\Storage\Blob\Models\ListBlobsOptions;
 
+use Azure\Core\Credentials\SharedKeyCredential;
+
 use MicrosoftAzure\Storage\Common\ServicesBuilder;
 use MicrosoftAzure\Storage\Common\Internal\Resources;
 
@@ -33,7 +35,8 @@ if (!$accountName || !$accountKey) {
 }
 
 $credential = new SharedKeyCredential($accountName, $accountKey);
-$blobClient = BlobClient::createFromConnectionString($connectionString);
+$blobClient = BlobRestProxy::createBlobService($connectionString);
+
 
 // Eliminar archivo si se envió solicitud
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_blob'])) {
