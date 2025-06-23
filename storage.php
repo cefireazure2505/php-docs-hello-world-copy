@@ -5,6 +5,10 @@ use MicrosoftAzure\Storage\Blob\BlobRestProxy;
 use MicrosoftAzure\Storage\Blob\Models\ListBlobsOptions;
 use MicrosoftAzure\Storage\Common\Exceptions\ServiceException;
 
+use MicrosoftAzure\Storage\Blob\Models\SharedAccessBlobPermissions;
+use MicrosoftAzure\Storage\Blob\Models\SharedAccessSignatureHelper;
+use MicrosoftAzure\Storage\Common\Internal\Resources;
+
 // Configuración
 $connectionString = getenv("AZURE_STORAGE_CONNECTION_STRING");
 $containerName = "comprimidos"; // Cambia esto por el nombre de tu contenedor
@@ -84,6 +88,20 @@ try {
         $containerName
     ) ?>'</h1>
     <ul>
+        <?php
+            // Extraer AccountName y AccountKey
+            preg_match("/AccountName=([^;]+)/", $connectionString, $accountNameMatch);
+            preg_match("/AccountKey=([^;]+)/", $connectionString, $accountKeyMatch);
+
+            $accountName = $accountNameMatch[1] ?? null;
+            $accountKey = $accountKeyMatch[1] ?? null;
+
+            if (!$accountName || !$accountKey) {
+                echo "<p style='color:red;'>No se pudo extraer la clave de acceso de la cadena de conexión.</p>";
+            } else {
+                $sasHelper = new SharedAccessSignatureHelper($accountName, $accountKey);
+            }
+        ?>
         <?php foreach ($blobs as $blob): ?>
             <li>
                 <a href="<?= htmlspecialchars(
