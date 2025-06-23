@@ -2,8 +2,11 @@
 
 require 'vendor/autoload.php';
 
-use MicrosoftAzure\Storage\Blob\BlobRestProxy;
-use MicrosoftAzure\Storage\Blob\Models\ListBlobsOptions;
+use Azure\Storage\Blob\BlobClient;
+use Azure\Storage\Blob\Models\BlobSasBuilder;
+use Azure\Storage\Blob\Models\BlobSasPermissions;
+use Azure\Core\Credentials\SharedKeyCredential;
+use Azure\Storage\Blob\Models\ListBlobsOptions;
 
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
@@ -26,41 +29,8 @@ if (!$accountName || !$accountKey) {
     die("No se pudo extraer AccountName o AccountKey de la cadena de conexión.");
 }
 
-$blobClient = BlobRestProxy::createBlobService($connectionString);
-
-// Función para generar SAS token manualmente
-function generateBlobSasToken($accountName, $accountKey, $containerName, $blobName, $expiryMinutes = 60) {
-    $permissions = "r";
-    $resource = "b";
-    $version = "2020-02-10";
-    $expiry = gmdate('Y-m-d\TH:i:s\Z', time() + ($expiryMinutes * 60));
-    $canonicalizedResource = "/blob/{$accountName}/{$containerName}/{$blobName}";
-
-    $stringToSign = implode("\n", [
-        $permissions,            // sp
-        "",                      // st
-        $expiry,                 // se
-        $canonicalizedResource, // canonicalized resource
-        "",                      // si
-        "",                      // sip
-        "",                      // spr
-        $version,                // sv
-        "", "", "", "", "", ""   // extra fields
-    ]);
-
-    $decodedKey = base64_decode($accountKey);
-    $signature = base64_encode(hash_hmac('sha256', $stringToSign, $decodedKey, true));
-
-    $queryParams = [
-        'sv' => $version,
-        'sr' => $resource,
-        'sig' => $signature,
-        'se' => $expiry,
-        'sp' => $permissions
-    ];
-
-    return http_build_query($queryParams);
-}
+$credential = new SharedKeyCredential($accountName, $accountKey);
+$blobClient = BlobClient::createFromConnectionString($connectionString);
 
 // Eliminar archivo si se envió solicitud
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_blob'])) {
@@ -79,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['zipfile'])) {
         $blobName = basename($file['name']);
         try {
             $content = fopen($file['tmp_name'], 'r');
-            $blobClient->createBlockBlob($containerName, $blobName, $content);
+            $blobClient->uploadBlob($containerName, $blobName, $content);
             echo "<p style='color:green;'>Archivo subido: {$blobName}</p>";
         } catch (Exception $e) {
             echo "<p style='color:red;'>Error al subir: {$e->getMessage()}</p>";
@@ -112,16 +82,21 @@ try {
         <li>No hay archivos ZIP.</li>
     <?php else: ?>
         <?php foreach ($blobs as $blob):
-            $blobName = $blob->getName();
-            $sasToken = generateBlobSasToken($accountName, $accountKey, $containerName, $blobName);
-            $url = $blobClient->getBlobUrl($containerName, $blobName) . '?' . $sasToken;
+            $sas = new BlobSasBuilder();
+            $sas->setContainerName($containerName);
+            $sas->setBlobName($blob->getName());
+            $sas->setPermissions(BlobSasPermissions::parse('r'));
+            $sas->setExpiry((new \DateTime())->add(new \DateInterval('PT1H')));
+
+            $sasToken = $sas->generateSasQueryParameters($credential)->toString();
+            $url = $blobClient->getBlobUrl($containerName, $blob->getName()) . '?' . $sasToken;
         ?>
             <li>
                 <a href="<?= htmlspecialchars($url) ?>" target="_blank">
-                    <?= htmlspecialchars($blobName) ?>
+                    <?= htmlspecialchars($blob->getName()) ?>
                 </a>
-                <form method="POST" style="display:inline;" onsubmit="return confirm('¿Eliminar <?= htmlspecialchars($blobName) ?>?')">
-                    <input type="hidden" name="delete_blob" value="<?= htmlspecialchars($blobName) ?>">
+                <form method="POST" style="display:inline;" onsubmit="return confirm('¿Eliminar <?= htmlspecialchars($blob->getName()) ?>?')">
+                    <input type="hidden" name="delete_blob" value="<?= htmlspecialchars($blob->getName()) ?>">
                     <button type="submit" style="color:red;">Eliminar</button>
                 </form>
             </li>
