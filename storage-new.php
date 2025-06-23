@@ -52,6 +52,33 @@ try {
 } catch (Exception $e) {
     die("Error al listar blobs: " . $e->getMessage());
 }
+
+function generateSasToken($accountName, $accountKey, $containerName, $blobName, $expiryMinutes = 60) {
+    $resource = "b"; // blob
+    $permissions = "r"; // read
+    $expiry = gmdate('Y-m-d\TH:i:s\Z', time() + ($expiryMinutes * 10));
+    $stringToSign = implode("\n", [
+        $permissions,
+        "", // start time
+        $expiry,
+        "/blob/{$accountName}/{$containerName}/{$blobName}",
+        "", "", "", "2020-02-10", "", "", "", "", "", "", ""
+    ]);
+
+    $decodedKey = base64_decode($accountKey);
+    $signature = base64_encode(hash_hmac('sha256', $stringToSign, $decodedKey, true));
+
+    $sas = http_build_query([
+        'sv' => '2020-02-10',
+        'sr' => $resource,
+        'sig' => $signature,
+        'se' => $expiry,
+        'sp' => $permissions
+    ]);
+
+    return $sas;
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -67,17 +94,22 @@ try {
     <?php if (empty($blobs)): ?>
         <li>No hay archivos ZIP.</li>
     <?php else: ?>
-        <?php foreach ($blobs as $blob): ?>
+        <?php foreach ($blobs as $blob):
+            $blobName = $blob->getName();
+            $sasToken = generateSasToken($accountName, $accountKey, $containerName, $blobName);
+            $url = $blobClient->getBlobUrl($containerName, $blobName) . '?' . $sasToken;
+        ?>
             <li>
-                <a href="?download=<?= urlencode($blob->getName()) ?>" target="_blank">
-                    <?= htmlspecialchars($blob->getName()) ?>
+                <a href="<?= htmlspecialchars($url) ?>" target="_blank">
+                    <?= htmlspecialchars($blobName) ?>
                 </a>
-                <form method="POST" style="display:inline;" onsubmit="return confirm('¿Eliminar <?= htmlspecialchars($blob->getName()) ?>?')">
-                    <input type="hidden" name="delete_blob" value="<?= htmlspecialchars($blob->getName()) ?>">
+                <form method="POST" style="display:inline;" onsubmit="return confirm('¿Eliminar <?= htmlspecialchars($blobName) ?>?')">
+                    <input type="hidden" name="delete_blob" value="<?= htmlspecialchars($blobName) ?>">
                     <button type="submit" style="color:red;">Eliminar</button>
                 </form>
             </li>
         <?php endforeach; ?>
+
     <?php endif; ?>
     </ul>
 
