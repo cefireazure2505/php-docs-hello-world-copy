@@ -2,114 +2,107 @@
 
 require 'vendor/autoload.php';
 
+use Azure\Storage\Blob\BlobRestProxy;
+use Azure\Storage\Blob\BlobClient;
+use Azure\Storage\Blob\Models\BlobSasBuilder;
+use Azure\Storage\Blob\Models\BlobSasPermissions;
+use Azure\Core\Credentials\SharedKeyCredential;
+use Azure\Storage\Blob\Models\ListBlobsOptions;
+
 ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
-
-use MicrosoftAzure\Storage\Blob\BlobRestProxy;
-use MicrosoftAzure\Storage\Blob\Models\ListBlobsOptions;
-use MicrosoftAzure\Storage\Common\Exceptions\ServiceException;
-use MicrosoftAzure\Storage\Blob\BlobSharedAccessPolicy;
-use MicrosoftAzure\Storage\Common\SharedAccessSignatureHelper; // This might be the correct public class now
-
 
 // Configuración
 $connectionString = getenv("AZURE_STORAGE_CONNECTION_STRING");
 $containerName = "comprimidos";
 
-if (empty($connectionString)) {
-    die("<p style='color:red;'>Error: La variable de entorno AZURE_STORAGE_CONNECTION_STRING no está configurada.</p>");
+if (!$connectionString) {
+    die("La variable AZURE_STORAGE_CONNECTION_STRING no está configurada.");
 }
 
-try {
-    $blobClient = BlobRestProxy::createBlobService($connectionString);
-} catch (\Exception $e) {
-    die("<p style='color:red;'>Error al conectar con Azure Blob Storage: " . $e->getMessage() . "</p>");
+// Obtener credenciales
+preg_match("/AccountName=([^;]+)/", $connectionString, $matchName);
+preg_match("/AccountKey=([^;]+)/", $connectionString, $matchKey);
+$accountName = $matchName[1] ?? null;
+$accountKey = $matchKey[1] ?? null;
+
+if (!$accountName || !$accountKey) {
+    die("No se pudo extraer AccountName o AccountKey de la cadena de conexión.");
 }
 
-// ... (Your existing delete and upload logic) ...
+$credential = new SharedKeyCredential($accountName, $accountKey);
+$blobClient = BlobClient::createFromConnectionString($connectionString);
 
-// Listar archivos
+// Eliminar archivo si se envió solicitud
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_blob'])) {
+    try {
+        $blobClient->deleteBlob($containerName, $_POST['delete_blob']);
+        echo "<p style='color:green;'>Archivo eliminado: {$_POST['delete_blob']}</p>";
+    } catch (Exception $e) {
+        echo "<p style='color:red;'>Error al eliminar: {$e->getMessage()}</p>";
+    }
+}
+
+// Subir archivo nuevo
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['zipfile'])) {
+    $file = $_FILES['zipfile'];
+    if ($file['error'] === UPLOAD_ERR_OK && mime_content_type($file['tmp_name']) === 'application/zip') {
+        $blobName = basename($file['name']);
+        try {
+            $content = fopen($file['tmp_name'], 'r');
+            $blobClient->uploadBlob($containerName, $blobName, $content);
+            echo "<p style='color:green;'>Archivo subido: {$blobName}</p>";
+        } catch (Exception $e) {
+            echo "<p style='color:red;'>Error al subir: {$e->getMessage()}</p>";
+        }
+    } else {
+        echo "<p style='color:red;'>Solo se permiten archivos .zip válidos.</p>";
+    }
+}
+
+// Listar blobs
 try {
-    $listOptions = new ListBlobsOptions();
-    $blobList = $blobClient->listBlobs($containerName, $listOptions);
+    $blobList = $blobClient->listBlobs($containerName, new ListBlobsOptions());
     $blobs = $blobList->getBlobs();
-} catch (ServiceException $e) {
-    die("<p style='color:red;'>Error al listar archivos: " . $e->getMessage() . "</p>");
+} catch (Exception $e) {
+    die("Error al listar blobs: " . $e->getMessage());
 }
 ?>
 
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
+    <meta charset="UTF-8">
     <title>Gestor de archivos ZIP en Azure Blob</title>
-    <style>
-        /* ... (Your existing CSS) ... */
-    </style>
 </head>
 <body>
-    <h1>Archivos ZIP en el contenedor '<?= htmlspecialchars($containerName) ?>'</h1>
-
-    <?php
-        // Extract AccountName and AccountKey from connection string
-        // This is necessary for manual SAS generation, but using $blobClient->generateBlobSharedAccessSignature is better.
-        // Let's rely on the BlobClient for SAS generation if possible.
-        $accountName = null;
-        if (preg_match("/AccountName=([^;]+)/", $connectionString, $matches1)) {
-             $accountName = $matches1[1];
-        }
-
-        // Check if account name is available (needed for SAS)
-        if (!$accountName) {
-            echo "<p style='color:red;'>No se pudo extraer el AccountName de la cadena de conexión. No se generarán URLs SAS.</p>";
-        }
-    ?>
+    <h1>Archivos ZIP en '<?= htmlspecialchars($containerName) ?>'</h1>
 
     <ul>
-        <?php if (empty($blobs)): ?>
-            <li>No hay archivos ZIP en este contenedor.</li>
-        <?php else: ?>
-            <?php foreach ($blobs as $blob):
-                $downloadUrl = $blob->getUrl(); // Default to direct URL
+    <?php if (empty($blobs)): ?>
+        <li>No hay archivos ZIP.</li>
+    <?php else: ?>
+        <?php foreach ($blobs as $blob):
+            $sas = new BlobSasBuilder();
+            $sas->setContainerName($containerName);
+            $sas->setBlobName($blob->getName());
+            $sas->setPermissions(BlobSasPermissions::parse('r'));
+            $sas->setExpiry((new \DateTime())->add(new \DateInterval('PT1H'))); // 1 hora
 
-                if ($accountName) {
-                    try {
-                        // Define the policy for the SAS token
-                        $permission = 'r'; // 'r' significa permiso de lectura
-                        // Set expiry to 1 hour from now. Adjust as needed.
-                        $expiryTime = (new \DateTime())->add(new \DateInterval('PT1H'));
-
-                        $sasPolicy = new BlobSharedAccessPolicy();
-                        $sasPolicy->setPermissions($permission);
-                        $sasPolicy->setExpiryTime($expiryTime);
-
-                        // Generate the SAS token using the BlobClient
-                        $sasToken = $blobClient->generateBlobSharedAccessSignature(
-                            $containerName,
-                            $blob->getName(),
-                            $sasPolicy
-                        );
-
-                        // Construct the full SAS URL
-                        $downloadUrl = $blob->getUrl() . '?' . $sasToken;
-
-                    } catch (\Exception $e) {
-                        echo "<p style='color:red;'>Error generando SAS para '{$blob->getName()}': " . $e->getMessage() . "</p>";
-                        // Fallback to direct URL if SAS generation fails, but it might still not work
-                    }
-                }
-            ?>
-                <li>
-                    <a href="<?= htmlspecialchars($downloadUrl) ?>" target="_blank">
-                        <?= htmlspecialchars($blob->getName()) ?>
-                    </a>
-                    <form method="POST" style="display:inline; margin-left: 10px;" onsubmit="return confirm('¿Estás seguro de que quieres eliminar '<?= htmlspecialchars($blob->getName()) ?>'?')">
-                        <input type="hidden" name="delete_blob" value="<?= htmlspecialchars($blob->getName()) ?>">
-                        <button type="submit" style="color: red; border: none; background: none; cursor: pointer; text-decoration: underline;">Eliminar</button>
-                    </form>
-                </li>
-            <?php endforeach; ?>
-        <?php endif; ?>
+            $sasToken = $sas->generateSasQueryParameters($credential)->toString();
+            $url = $blobClient->getBlobUrl($containerName, $blob->getName()) . '?' . $sasToken;
+        ?>
+            <li>
+                <a href="<?= htmlspecialchars($url) ?>" target="_blank">
+                    <?= htmlspecialchars($blob->getName()) ?>
+                </a>
+                <form method="POST" style="display:inline;" onsubmit="return confirm('¿Eliminar <?= htmlspecialchars($blob->getName()) ?>?')">
+                    <input type="hidden" name="delete_blob" value="<?= htmlspecialchars($blob->getName()) ?>">
+                    <button type="submit" style="color:red;">Eliminar</button>
+                </form>
+            </li>
+        <?php endforeach; ?>
+    <?php endif; ?>
     </ul>
 
     <h2>Subir nuevo archivo ZIP</h2>
