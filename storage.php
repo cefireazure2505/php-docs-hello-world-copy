@@ -88,20 +88,6 @@ try {
         $containerName
     ) ?>'</h1>
     <ul>
-        <?php
-            // Extraer AccountName y AccountKey
-            preg_match("/AccountName=([^;]+)/", $connectionString, $accountNameMatch);
-            preg_match("/AccountKey=([^;]+)/", $connectionString, $accountKeyMatch);
-
-            $accountName = $accountNameMatch[1] ?? null;
-            $accountKey = $accountKeyMatch[1] ?? null;
-
-            if (!$accountName || !$accountKey) {
-                echo "<p style='color:red;'>No se pudo extraer la clave de acceso de la cadena de conexión.</p>";
-            } else {
-                $sasHelper = new SharedAccessSignatureHelper($accountName, $accountKey);
-            }
-        ?>
         <?php foreach ($blobs as $blob): ?>
             <li>
                 <a href="<?= htmlspecialchars(
