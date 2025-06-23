@@ -12,7 +12,7 @@ use MicrosoftAzure\Storage\Blob\Models\ListBlobsOptions;
 use MicrosoftAzure\Storage\Common\Exceptions\ServiceException;
 
 use MicrosoftAzure\Storage\Blob\Models\SharedAccessBlobPermissions;
-use MicrosoftAzure\Storage\Blob\Models\SharedAccessSignatureHelper;
+use MicrosoftAzure\Storage\Common\Internal\SharedAccessSignatureHelper;
 use MicrosoftAzure\Storage\Common\Internal\Resources;
 
 // Configuración
