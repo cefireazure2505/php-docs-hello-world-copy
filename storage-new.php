@@ -53,31 +53,39 @@ try {
     die("Error al listar blobs: " . $e->getMessage());
 }
 
-function generateSasToken($accountName, $accountKey, $containerName, $blobName, $expiryMinutes = 60) {
-    $resource = "b"; // blob
-    $permissions = "r"; // read
-    $expiry = gmdate('Y-m-d\TH:i:s\Z', time() + ($expiryMinutes * 10));
+function generateBlobSasToken($accountName, $accountKey, $containerName, $blobName, $expiryMinutes = 60) {
+    $permissions = "r";
+    $resource = "b";
+    $version = "2020-02-10";
+    $expiry = gmdate('Y-m-d\TH:i:s\Z', time() + ($expiryMinutes * 60));
+    $canonicalizedResource = "/blob/{$accountName}/{$containerName}/{$blobName}";
+
     $stringToSign = implode("\n", [
-        $permissions,
-        "", // start time
-        $expiry,
-        "/blob/{$accountName}/{$containerName}/{$blobName}",
-        "", "", "", "2020-02-10", "", "", "", "", "", "", ""
+        $permissions,        // signed permissions
+        "",                  // signed start time
+        $expiry,             // signed expiry time
+        $canonicalizedResource,
+        "",                  // signed identifier
+        "",                  // signed IP
+        "",                  // signed protocol
+        $version,            // signed version
+        "", "", "", "", "", "" // extra fields for newer versions
     ]);
 
     $decodedKey = base64_decode($accountKey);
     $signature = base64_encode(hash_hmac('sha256', $stringToSign, $decodedKey, true));
 
-    $sas = http_build_query([
-        'sv' => '2020-02-10',
+    $queryParams = [
+        'sv' => $version,
         'sr' => $resource,
         'sig' => $signature,
         'se' => $expiry,
         'sp' => $permissions
-    ]);
+    ];
 
-    return $sas;
+    return http_build_query($queryParams);
 }
+
 
 ?>
 
@@ -96,7 +104,7 @@ function generateSasToken($accountName, $accountKey, $containerName, $blobName, 
     <?php else: ?>
         <?php foreach ($blobs as $blob):
             $blobName = $blob->getName();
-            $sasToken = generateSasToken($accountName, $accountKey, $containerName, $blobName);
+            $sasToken = generateBlobSasToken($accountName, $accountKey, $containerName, $blobName);
             $url = $blobClient->getBlobUrl($containerName, $blobName) . '?' . $sasToken;
         ?>
             <li>
